@@ -33,13 +33,23 @@ __copyright__ = '(C) 2023 by Grupo 3'
 
 __revision__ = '$Format:%H$'
 
-from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
+                       QgsProcessingParameterRasterLayer,
                        QgsProcessingAlgorithm,
+                       QgsWkbTypes,
+                       QgsFeature,
+                       QgsProcessingParameterMultipleLayers,
+                       QgsGeometry,
+                       QgsFields,
+                       QgsVectorLayer,
+                       QgsPointXY,
+                       QgsField,
+                       QgsProcessingException,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
-
+import numpy as np
 
 class Projeto1SolucaoComplementar(QgsProcessingAlgorithm):
     """
@@ -55,32 +65,28 @@ class Projeto1SolucaoComplementar(QgsProcessingAlgorithm):
     class.
     """
 
-    # Constants used to refer to parameters and outputs. They will be
-    # used when calling the algorithm from another algorithm, or when
-    # calling from the QGIS console.
+    # Declarando os nossos parâmetros que utilizaremos para a resolução da questão.
 
     OUTPUT = 'OUTPUT'
     INPUT = 'INPUT'
 
     def initAlgorithm(self, config):
         """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
+        Definindo os parâmetros de entrada (INPUT).
         """
 
-        # We add the input vector features source. It can have any kind of
-        # geometry.
+        # Adicionando o parâmetro para processar multiplas camadas como entrada (INPUT).
+
         self.addParameter(
-            QgsProcessingParameterFeatureSource(
+            QgsProcessingParameterMultipleLayers(
                 self.INPUT,
                 self.tr('Input layer'),
-                [QgsProcessing.TypeVectorAnyGeometry]
+                layerType = QgsProcessing.TypeRaster
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
+        # Adicionando o parâmetro de saída (OUTPUT).
+
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
@@ -90,76 +96,57 @@ class Projeto1SolucaoComplementar(QgsProcessingAlgorithm):
 
     def processAlgorithm(self, parameters, context, feedback):
         """
-        Here is where the processing itself takes place.
+        Teremos o efetivo desenvolvimento do algoritmo nessa etapa, resultando no
+        nosso produto final.
         """
 
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
-        source = self.parameterAsSource(parameters, self.INPUT, context)
+        # Criando a variável raster para receber uma lista de rasters de entrada (INPUT).
+        listaRaster = self.parameterAsLayerList(parameters, self.INPUT, context)
+
+        # Criando os atributos necessários da camada de saída chamando de fields, temos:
+
+        fields = QgsFields()
+        fields.append(QgsField("raster1", QVariant.String))
+        fields.append(QgsField("raster2", QVariant.String))
+        fields.append(QgsField("erro", QVariant.Double))
+
+        # Criando a variável que irá receber os resultados obtidos a partir da comparação entre as camadas Raster.
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                context, source.fields(), source.wkbType(), source.sourceCrs())
+                context, fields, QgsWkbTypes.Polygon, listaRaster[0].crs())
+        
 
-        # Compute the number of steps to display within the progress bar and
-        # get features from source
-        total = 100.0 / source.featureCount() if source.featureCount() else 0
-        features = source.getFeatures()
+        # É criada a variável total para se avaliar o progresso do algoritmo.
+        total = 100.0 / len(listaRaster) if len(listaRaster) else 0
 
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
+        for current, i in enumerate(range(len(listaRaster))):
+            # Caso o usuário deseje cancelar o processo, poderá.
             if feedback.isCanceled():
                 break
+            
+            for current2, j in enumerate(range(len(listaRaster))):
+                
+                if i != j:
+                    
+                    # Armazenando em variáveis os quadriláteros que envolvem as imagens da iteração.
+                    quadRasterI = listaRaster[i].extent()
+                    quadRasterJ = listaRaster[j].extent()
 
-            # Add a feature in the sink
-            sink.addFeature(feature, QgsFeatureSink.FastInsert)
+                    # Criando 4 variáveis para cada quadrilátero que irá representar os vértices, teremos:
+                    pontoI1 = f"{quadRasterI.xMinimum()} {quadRasterI.yMinimum()}"
+                    pontoI2 = f"{quadRasterI.xMinimum()} {quadRasterI.yMaximum()}"
+                    pontoI3 = f"{quadRasterI.xMaximum()} {quadRasterI.yMaximum()}"
+                    pontoI4 = f"{quadRasterI.xMaximum()} {quadRasterI.yMinimum()}"
 
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
+                    pontoJ1 = f"{quadRasterJ.xMinimum()} {quadRasterJ.yMinimum()}"
+                    pontoJ2 = f"{quadRasterJ.xMinimum()} {quadRasterJ.yMaximum()}"
+                    pontoJ3 = f"{quadRasterJ.xMaximum()} {quadRasterJ.yMaximum()}"
+                    pontoJ4 = f"{quadRasterJ.xMaximum()} {quadRasterJ.yMinimum()}"
 
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
-        return {self.OUTPUT: dest_id}
+                    # Criando as variáveis quadFeatureI e quadFeatureJ para reservar as features 
+                    # criadas com os vértices.
+                    quadFeatureI = QgsFeature()
+                    quadFeatureJ = QgsFeature()
 
-    def name(self):
-        """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
-        return 'Solução Complementar do Projeto 1'
-
-    def displayName(self):
-        """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
-        """
-        return self.tr(self.name())
-
-    def group(self):
-        """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
-        """
-        return self.tr(self.groupId())
-
-    def groupId(self):
-        """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
-        return 'Projeto 1'
-
-    def tr(self, string):
-        return QCoreApplication.translate('Processing', string)
-
-    def createInstance(self):
-        return Projeto1SolucaoComplementar()
+                    # Ajeitando a geometria com o setGeometry() para conseguir adicionar os vértices.
+                    quadFeatureI.setGeometry(QgsGeometry.fromWkt(f"POLYGON (({pontoI1}, {pontoI2}, {pontoI3}, {pontoI4}, {pontoI1}))"))
+                    quadFeatureJ.setGeometry(QgsGeometry.fromWkt(f"POLYGON (({pontoJ1}, {pontoJ2}, {pontoJ3}, {pontoJ4}, {pontoJ1}))"))
