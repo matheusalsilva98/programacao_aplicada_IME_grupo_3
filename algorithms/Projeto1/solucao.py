@@ -142,3 +142,110 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
 
         # Criando uma variável que tem por finalidade armazenar os valores dos erros,  erros = z_t - z_r.
         lista_erros = []
+
+        for current, feature in enumerate(features):
+            # Caso o usuário desejar, poderá cancelar o processo do código.
+            if feedback.isCanceled():
+                break
+                
+            # Analisando quais pontos na camada do pontos de controle estão dentro do retanguloFeatureRaster.
+            if (feature.geometry()).within(retanguloFeatureRaster.geometry()):
+                
+                # Depois de analisado se cada ponto está dentro do retanguloFeatureRaster, que é o boundingBox do raster de entrada,
+                # vamos criar as feições que serão adicionadas na camada de saída, com o atributo fields criado anteriormente.
+                flagFeature = QgsFeature(fields)
+
+
+                # Para completar o atributo dos pontos gerados, precisamos comparar o valor do z presente no arquivo tiff do raster
+                # e do z que está presente no csv.
+                # Inicialmente adquirindo o z presente no arquivo tiff do raster e armazenando na variável z_t, temos:
+                z_t = raster.dataProvider().sample(QgsPointXY(feature.geometry().asPoint()), 1)[0]
+
+                # Agora adquirindo o z presente na tabela de atributos da feature presente no pontos de controle, na iteração dada.
+                z_r = feature["z"]
+
+                # O atributo erro da feature que vai ser inserida na camada de saída será dada por : zt - zr
+                flagFeature["erro"] = z_t - z_r
+
+
+                # Arrumando a geometria para o ponto com as coordenadas dos pontos de controle.
+                flagFeature.setGeometry(QgsGeometry.fromWkt(feature.geometry().asWkt()).buffer(180 * abs((z_t - z_r)), -1))
+
+                
+                # raioProporcionalAoErro = flagFeature.geometry().buffer(50, 25)
+                # flagFeature.setGeometry(raioProporcionalAoErro)
+
+                # Adicionando o elemento também na lista criada chamada de lista_erros.
+                lista_erros.append(flagFeature["erro"])
+
+                # Adicionando a feição gerada na variável de saída, que respeita as condições impostas.
+                sink.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+
+            # Barra de progresso que aparece na interface do usuário.
+            feedback.setProgress(int(current * total))
+        
+        # Pomemos agora, depois de adquirir todos os pontos na lista dos erros, chamada de lista_erros, podemos calcular o EMQz e 
+        # definir para qual PEC encaixa.
+        EMQz = 0
+        for ezi in lista_erros:
+            EMQz += ezi ** 2
+        EMQz = (EMQz/len(lista_erros)) ** (1/2)
+
+        # Informando na tabela do Log o valor do EMQz para os erros do ponto no tiff do raster e nos pontos de controle.
+        feedback.pushInfo(f"O valor da acurácia posicional absoluta altimétrica EMQz = {EMQz}\n")
+
+        # Por fim, determinando em qual PEC se encaixa de acordo com os valores de EP fornecidos na tabela para cartas de 1:25000, teremos:
+        if (EMQz < 1.67):
+            Pec = "A" # Para o caso de ser menor que 1.67 o valor de EMQz.
+        elif (EMQz < 3.33):
+            Pec = "B" # Para o caso de ser maior ou igual a 1.67 ou menor que 3.33 o valor de EMQz.
+        elif (EMQz < 4.0):
+            Pec = "C" # Para o caso de ser maior ou igual a 3.33 ou menor que 4.0 o valor de EMQz.
+        elif (EMQz < 5.0):
+            Pec = "D" # Para o caso de ser maior ou igual a 4.0 e menor que 5.0 o valor de EMQz.
+        else:
+            Pec = "Não Conforme" # Para casos em que o EMQz possui valores maiores que 5.0 de EP.
+
+        # Informando na tabela do Log o PEC associado de acordo com o EMQz calculado.
+        feedback.pushInfo(f"A acurácia posicional absoluta altimétrica tabelada PEC = {Pec}\n")
+
+        # O resultado do processo, em que a função do processAlgorithm irá retornar.
+        return {self.OUTPUT: dest_id}
+
+    def name(self):
+        """
+        Solução do Projeto1, que possui como objetivo calcular a acurácia posicional
+        absoluta altimétrica (EMQz e PEC) de 6 modelos digitais de superfície. Devemos ter
+        uma camada de entrada que será um raster, a camada comparativa será uma camada
+        do tipo ponto.
+        """
+        return 'Solução do Projeto 1'
+
+    def displayName(self):
+        """
+        Retorna o nome do algoritmo traduzido.
+        """
+        return self.tr(self.name())
+
+    def group(self):
+        """
+        Returns the name of the group this algorithm belongs to. This string
+        should be localised.
+        """
+        return self.tr(self.groupId())
+
+    def groupId(self):
+        """
+        Returns the unique ID of the group this algorithm belongs to. This
+        string should be fixed for the algorithm, and must not be localised.
+        The group id should be unique within each provider. Group id should
+        contain lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return 'Projeto 1'
+
+    def tr(self, string):
+        return QCoreApplication.translate('Processing', string)
+
+    def createInstance(self):
+        return Projeto1Solucao()
