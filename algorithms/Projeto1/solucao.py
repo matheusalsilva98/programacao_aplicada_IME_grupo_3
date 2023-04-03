@@ -32,9 +32,15 @@ __copyright__ = '(C) 2023 by Grupo 3'
 # This will get replaced with a git SHA1 when you do a git archive
 
 __revision__ = '$Format:%H$'
-
-from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
 from qgis.core import (QgsProcessing,
+                       QgsWkbTypes,
+                       QgsFields,
+                       QgsField,
+                       QgsFeature,
+                       QgsProcessingParameterRasterLayer,
+                       QgsGeometry,
+                       QgsPointXY,
                        QgsFeatureSink,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterFeatureSource,
@@ -55,11 +61,10 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
     class.
     """
 
-    # Constants used to refer to parameters and outputs. They will be
-    # used when calling the algorithm from another algorithm, or when
-    # calling from the QGIS console.
+    # Declarando os nossos parâmetros que utilizaremos para a resolução da questão.
 
     OUTPUT = 'OUTPUT'
+    PONTOS_CONTROLE = 'PONTOS_CONTROLE'
     INPUT = 'INPUT'
 
     def initAlgorithm(self, config):
@@ -68,19 +73,25 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
         with some other properties.
         """
 
-        # We add the input vector features source. It can have any kind of
-        # geometry.
+        # Adicionando o parâmetro de entrada como sendo do tipo Raster (INPUT).
         self.addParameter(
-            QgsProcessingParameterFeatureSource(
+            QgsProcessingParameterRasterLayer(
                 self.INPUT,
                 self.tr('Input layer'),
-                [QgsProcessing.TypeVectorAnyGeometry]
+                [QgsProcessing.TypeRaster]
+            )
+        )
+        
+        # Adicionando o parâmetro que receberá os pontos de controle para comparativo com os pontos da imagem.
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+            self.PONTOS_CONTROLE,
+            self.tr('Pontos de controle'),
+            [QgsProcessing.TypeVectorPoint]
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
+        # Adicionando o parâmetro de saída (OUTPUT)
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
@@ -93,73 +104,41 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
 
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
-        source = self.parameterAsSource(parameters, self.INPUT, context)
+        # Declarando a variável raster que receberá a entrada.
+        raster = self.parameterAsRasterLayer(parameters, self.INPUT, context)
+
+        # Declarando a variável pontos_controle que recebrá a camada dos pontos de controle.
+        pontos_controle = self.parameterAsSource(parameters, self.PONTOS_CONTROLE, context)
+
+        # Criando o atributo flag para as features de saída, do tipo númerico double (decimal).
+        fields = QgsFields()
+        fields.append(QgsField("erro", QVariant.Double))
+
+        # Declarando a variável e o id que receberão a camada de saída.
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                context, source.fields(), source.wkbType(), source.sourceCrs())
+                context, fields, QgsWkbTypes.Polygon, raster.crs())
+        
+        # Criando a variável retanguloRaster para receber o método extent na camada raster inserida como input.
+        retanguloRaster = raster.extent()
 
-        # Compute the number of steps to display within the progress bar and
-        # get features from source
-        total = 100.0 / source.featureCount() if source.featureCount() else 0
-        features = source.getFeatures()
+        # Criando 4 variáveis, as quais vão receber os vértices adquiridos a partir do extent do raster.
+        ponto1 = f'{retanguloRaster.xMinimum()} {retanguloRaster.yMinimum()}'
+        ponto2 = f'{retanguloRaster.xMinimum()} {retanguloRaster.yMaximum()}'
+        ponto3 = f'{retanguloRaster.xMaximum()} {retanguloRaster.yMaximum()}'
+        ponto4 = f'{retanguloRaster.xMaximum()} {retanguloRaster.yMinimum()}'
+        
+        # Criando a variável retanguloFeatureRaster para receber a feature com as limitações do raster de entrada, que foram
+        # obtido a partir da variável retanguloRaster.
+        retanguloFeatureRaster = QgsFeature()
+        # Incrementando as coordendas do boundingBox que se consegue a partir da variável retanguloRaster, podemos colocar geometria 
+        # na nossa feature criada.
+        retanguloFeatureRaster.setGeometry(QgsGeometry.fromWkt(f"POLYGON (({ponto1}, {ponto2}, {ponto3}, {ponto4}, {ponto1}))"))
+        
 
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
-            if feedback.isCanceled():
-                break
+        # Criando a variável total que medirá o progresso.
+        total = 100.0 / pontos_controle.featureCount() if pontos_controle.featureCount() else 0
+        # Pegando todos os pontos presentes na camada pontos de controle inserida a partir do csv.
+        features = pontos_controle.getFeatures()
 
-            # Add a feature in the sink
-            sink.addFeature(feature, QgsFeatureSink.FastInsert)
-
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
-
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
-        return {self.OUTPUT: dest_id}
-
-    def name(self):
-        """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
-        return 'Solução do Projeto 1'
-
-    def displayName(self):
-        """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
-        """
-        return self.tr(self.name())
-
-    def group(self):
-        """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
-        """
-        return self.tr(self.groupId())
-
-    def groupId(self):
-        """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
-        return 'Projeto 1'
-
-    def tr(self, string):
-        return QCoreApplication.translate('Processing', string)
-
-    def createInstance(self):
-        return Projeto1Solucao()
+        # Criando uma variável que tem por finalidade armazenar os valores dos erros,  erros = z_t - z_r.
+        lista_erros = []
