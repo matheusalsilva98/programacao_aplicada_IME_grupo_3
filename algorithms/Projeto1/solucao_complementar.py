@@ -226,8 +226,10 @@ class Projeto1SolucaoComplementar(QgsProcessingAlgorithm):
 
                         # Informando na tabela do Log o valor do EMQz para os erros do ponto no tiff do raster e nos pontos de controle.
                         feedback.pushInfo(f"O valor da acurácia posicional relativa entre {listaRaster[i].name()} e {listaRaster[j].name()} altimétrica EMQz = {EMQz}\n")
+
+                    # Criando um erro caso não haja intersecção entre as camadas.
                     else:
-                        raise Exception("Rasters não possuem intersecção.")
+                        raise QgsProcessingException("Não há intersecção entre os Rasters.")
 
             # Progresso da barra na interface com o usuário.
             feedback.setProgress(int(current * total))
