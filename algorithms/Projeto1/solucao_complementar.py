@@ -118,6 +118,9 @@ class Projeto1SolucaoComplementar(QgsProcessingAlgorithm):
         # É criada a variável total para se avaliar o progresso do algoritmo.
         total = 100.0 / len(listaRaster) if len(listaRaster) else 0
 
+        # Criando uma lista dos erros para conseguirmos calcular o EMQz a posteriori.
+        lista_erros = []
+
         for current, i in enumerate(range(len(listaRaster))):
             # Caso o usuário deseje cancelar o processo, poderá.
             if feedback.isCanceled():
@@ -203,15 +206,29 @@ class Projeto1SolucaoComplementar(QgsProcessingAlgorithm):
                                 z_r = listaRaster[i].dataProvider().sample(QgsPointXY(ponto.geometry().asPoint()), 1)[0]
 
                                 # Dessa forma, vamos preencher os atributos da feição feita.
-                                flagFeature["raster1"] = "teste1"
-                                flagFeature["raster2"] = "teste2"
+                                flagFeature["raster1"] = f"{listaRaster[i].name()}"
+                                flagFeature["raster2"] = f"{listaRaster[j].name()}"
                                 flagFeature["erro"] = (z_t - z_r)
+
+                                # Adicionando o elemento também na lista criada chamada de lista_erros.
+                                lista_erros.append(flagFeature["erro"])
+
 
                                 # Adiciona a feature na camada de saída.
                                 sink.addFeature(flagFeature, QgsFeatureSink.FastInsert)
 
             # Progresso da barra na interface com o usuário.
             feedback.setProgress(int(current * total))
+        
+        # Pomemos agora, depois de adquirir todos os pontos na lista dos erros, chamada de lista_erros, podemos calcular o EMQz e 
+        # definir para qual PEC encaixa.
+        EMQz = 0
+        for ezi in lista_erros:
+            EMQz += ezi ** 2
+        EMQz = (EMQz/len(lista_erros)) ** (1/2)
+
+        # Informando na tabela do Log o valor do EMQz para os erros do ponto no tiff do raster e nos pontos de controle.
+        feedback.pushInfo(f"O valor da acurácia posicional absoluta altimétrica EMQz = {EMQz}\n")
 
         # Retorno do processo realizado pelo algoritmo.
         return {self.OUTPUT: dest_id}
