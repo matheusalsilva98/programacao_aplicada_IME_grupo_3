@@ -34,9 +34,16 @@ __copyright__ = '(C) 2023 by Grupo 3'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtCore import QVariant
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
+                       QgsGeometry,
+                       QgsField,
+                       QgsFields,
+                       QgsFeature,
+                       QgsSpatialIndex,
                        QgsProcessingAlgorithm,
+                       QgsCoordinateReferenceSystem,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
 
@@ -60,9 +67,10 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
     # calling from the QGIS console.
 
     OUTPUT = 'OUTPUT'
-    INPUT = 'INPUT'
+    INPUT1 = 'INPUT1'
+    INPUT2 = 'INPUT2'
 
-    def initAlgorithm(self, config):
+    def initAlgorithm(self, config=None):
         """
         Here we define the inputs and output of the algorithm, along
         with some other properties.
@@ -72,9 +80,17 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         # geometry.
         self.addParameter(
             QgsProcessingParameterFeatureSource(
-                self.INPUT,
-                self.tr('Input layer'),
-                [QgsProcessing.TypeVectorAnyGeometry]
+                self.INPUT1,
+                self.tr('Drenagens'),
+                [QgsProcessing.TypeVectorLine]
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.INPUT2,
+                self.tr('Massas de água'),
+                [QgsProcessing.TypeVectorPolygon]
             )
         )
 
@@ -84,7 +100,8 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
-                self.tr('Output layer')
+                self.tr('Drenagens(output)'),
+                QgsProcessing.TypeVectorLine
             )
         )
 
@@ -96,32 +113,56 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         # Retrieve the feature source and sink. The 'dest_id' variable is used
         # to uniquely identify the feature sink, and must be included in the
         # dictionary returned by the processAlgorithm function.
-        source = self.parameterAsSource(parameters, self.INPUT, context)
+        lines_source = self.parameterAsSource(parameters, self.INPUT1, context)
+        polygons_source = self.parameterAsSource(
+            parameters, self.INPUT2, context)
+
+        lines_fields = lines_source.fields()
+        lines_fields.append(QgsField('dentro_de_poligono', QVariant.Bool))
+
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                context, source.fields(), source.wkbType(), source.sourceCrs())
+                                               context, lines_fields, lines_source.wkbType(), lines_source.sourceCrs())
 
         # Compute the number of steps to display within the progress bar and
         # get features from source
-        total = 100.0 / source.featureCount() if source.featureCount() else 0
-        features = source.getFeatures()
+        total = 100.0 / (lines_source.featureCount() + polygons_source.featureCount()
+                         ) if lines_source.featureCount() and polygons_source.featureCount() else 0
 
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
-            if feedback.isCanceled():
-                break
+        line_features = lines_source.getFeatures()
+        polygons_features = polygons_source.getFeatures()
 
-            # Add a feature in the sink
-            sink.addFeature(feature, QgsFeatureSink.FastInsert)
+        for i, feat_polyg in enumerate(polygons_features):
+            for j, feat_line in enumerate(line_features):
 
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
+                # Stop the algorithm if cancel button has been clicked
+                if feedback.isCanceled():
+                    break
 
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
+                geom_line = feat_line.geometry()
+                geom_polyg = feat_polyg.geometry()
+
+                #polyg_geometry_engine = QgsGeometry.createGeometryEngine(QgsGeometry.fromWkt(geom_polyg.asWkt()).constGet())
+                # polyg_geometry_engine.prepareGeometry()
+
+                # if polyg_geometry_engine.relatePattern(geom_line.constGet(), '1FF0FF212'):
+                if geom_line.within(geom_polyg):
+                    new_feat = QgsFeature(lines_fields)
+                    new_feat.setAttributes(feat_line.attributes())
+                    new_feat.setGeometry(
+                        QgsGeometry.fromWkt(geom_line.asWkt()))
+                    new_feat["dentro_de_poligono"] = True
+                    sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+                else:
+                    new_feat = QgsFeature(lines_fields)
+                    new_feat.setAttributes(feat_line.attributes())
+                    new_feat.setGeometry(
+                        QgsGeometry.fromWkt(geom_line.asWkt()))
+                    new_feat["dentro_de_poligono"] = False
+                    sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+
+                # Update the progress bar
+                feedback.setProgress(int((i + j) * total))
+
         return {self.OUTPUT: dest_id}
 
     def name(self):
