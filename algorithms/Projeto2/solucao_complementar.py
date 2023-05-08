@@ -42,8 +42,8 @@ from qgis.core import (QgsProcessing,
                        QgsFields,
                        QgsFeature,
                        QgsSpatialIndex,
+                       QgsFeatureRequest,
                        QgsProcessingAlgorithm,
-                       QgsCoordinateReferenceSystem,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
 
@@ -85,7 +85,7 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
                 [QgsProcessing.TypeVectorLine]
             )
         )
-
+        
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.INPUT2,
@@ -114,56 +114,65 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         # to uniquely identify the feature sink, and must be included in the
         # dictionary returned by the processAlgorithm function.
         lines_source = self.parameterAsSource(parameters, self.INPUT1, context)
-        polygons_source = self.parameterAsSource(
-            parameters, self.INPUT2, context)
-
+        polygons_source = self.parameterAsSource(parameters, self.INPUT2, context)
+                
         lines_fields = lines_source.fields()
         lines_fields.append(QgsField('dentro_de_poligono', QVariant.Bool))
-
+                
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                                               context, lines_fields, lines_source.wkbType(), lines_source.sourceCrs())
+                context, lines_fields, lines_source.wkbType(), lines_source.sourceCrs())
 
         # Compute the number of steps to display within the progress bar and
         # get features from source
-        total = 100.0 / (lines_source.featureCount() + polygons_source.featureCount()
-                         ) if lines_source.featureCount() and polygons_source.featureCount() else 0
-
+        total = 100.0 / (lines_source.featureCount() + polygons_source.featureCount()) if lines_source.featureCount() and polygons_source.featureCount() else 0
+                
         line_features = lines_source.getFeatures()
         polygons_features = polygons_source.getFeatures()
-
-        for i, feat_polyg in enumerate(polygons_features):
-            for j, feat_line in enumerate(line_features):
-
+                
+        polyg_source_id_dict = {}
+        polyg_source_spacial_idx = QgsSpatialIndex()
+                
+        for j, feat_line in enumerate(line_features):
+            # Stop the algorithm if cancel button has been clicked
+            if feedback.isCanceled():
+                break
+                        
+            geom_line = feat_line.geometry()
+            bbox = geom_line.boundingBox()
+            request = QgsFeatureRequest(bbox)
+                        
+            for feat_polyg in polygons_source.getFeatures(request):
                 # Stop the algorithm if cancel button has been clicked
                 if feedback.isCanceled():
                     break
-
-                geom_line = feat_line.geometry()
+                            
+                polyg_source_id_dict[feat_polyg.id()] = feat_polyg
+                polyg_source_spacial_idx.addFeature(feat_polyg)
                 geom_polyg = feat_polyg.geometry()
-
-                #polyg_geometry_engine = QgsGeometry.createGeometryEngine(QgsGeometry.fromWkt(geom_polyg.asWkt()).constGet())
-                # polyg_geometry_engine.prepareGeometry()
-
-                # if polyg_geometry_engine.relatePattern(geom_line.constGet(), '1FF0FF212'):
-                if geom_line.within(geom_polyg):
+                line_geom_engine = QgsGeometry.createGeometryEngine(geom_line.constGet())
+                line_geom_engine.prepareGeometry()
+                            
+                if line_geom_engine.within(geom_polyg.constGet()):
                     new_feat = QgsFeature(lines_fields)
-                    new_feat.setAttributes(feat_line.attributes())
-                    new_feat.setGeometry(
-                        QgsGeometry.fromWkt(geom_line.asWkt()))
-                    new_feat["dentro_de_poligono"] = True
+                    for field in lines_fields:
+                        new_feat[field.name()] = feat_line[field.name()]
+                    new_feat.setGeometry(QgsGeometry.fromWkt(geom_line.asWkt()))
+                    new_feat['dentro_de_poligono'] = True
                     sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+                                
                 else:
                     new_feat = QgsFeature(lines_fields)
-                    new_feat.setAttributes(feat_line.attributes())
-                    new_feat.setGeometry(
-                        QgsGeometry.fromWkt(geom_line.asWkt()))
-                    new_feat["dentro_de_poligono"] = False
+                    for field in lines_fields:
+                        new_feat[field.name()] = feat_line[field.name()]
+                    new_feat.setGeometry(QgsGeometry.fromWkt(geom_line.asWkt()))
+                    new_feat['dentro_de_poligono'] = False
                     sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
-
-                # Update the progress bar
-                feedback.setProgress(int((i + j) * total))
+                                
+            # Update the progress bar
+            feedback.setProgress(int((j + 1) * total))
 
         return {self.OUTPUT: dest_id}
+
 
     def name(self):
         """
