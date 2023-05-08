@@ -129,8 +129,8 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         line_features = lines_source.getFeatures()
         polygons_features = polygons_source.getFeatures()
 
-        polyg_source_id_dict = {}
-        polyg_source_spacial_idx = QgsSpatialIndex(polygons_source.getFeatures())
+        #polyg_source_id_dict = {}
+        #polyg_source_spacial_idx = QgsSpatialIndex(polygons_source.getFeatures())
 
         for j, feat_line in enumerate(line_features):
             # Stop the algorithm if cancel button has been clicked
@@ -143,7 +143,7 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
             new_feat = QgsFeature(lines_fields)
             for field in lines_fields:
                 new_feat[field.name()] = feat_line[field.name()]
-                
+
             new_feat.setGeometry(QgsGeometry.fromWkt(feat_line.geometry().asWkt()))
 
             geom_line = feat_line.geometry()
@@ -155,8 +155,8 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
                 if feedback.isCanceled():
                     break
 
-                polyg_source_id_dict[feat_polyg.id()] = feat_polyg
-                polyg_source_spacial_idx.addFeature(feat_polyg)
+                #polyg_source_id_dict[feat_polyg.id()] = feat_polyg
+                #polyg_source_spacial_idx.addFeature(feat_polyg)
                 geom_polyg = feat_polyg.geometry()
                 line_geom_engine = QgsGeometry.createGeometryEngine(geom_line.constGet())
                 line_geom_engine.prepareGeometry()
