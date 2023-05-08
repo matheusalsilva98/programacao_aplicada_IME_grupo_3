@@ -33,111 +33,134 @@ __copyright__ = '(C) 2023 by Grupo 3'
 
 __revision__ = '$Format:%H$'
 
-from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import (QgsProcessing,
-                       QgsFeatureSink,
-                       QgsProcessingAlgorithm,
+import math
+import concurrent.futures
+import os
+
+from PyQt5.QtCore import QCoreApplication, QVariant
+from qgis.core import (QgsFeature, QgsFeatureRequest, QgsField, QgsFields,
+                       QgsGeometry, QgsGeometryUtils, QgsPoint, QgsPointXY,
+                       QgsProcessing, QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterFeatureSource,
-                       QgsProcessingParameterFeatureSink)
+                       QgsProcessingParameterNumber, QgsProject, QgsWkbTypes, 
+                       QgsProcessingMultiStepFeedback, QgsProcessingAlgorithm)
+
 
 
 class Projeto2Solucao(QgsProcessingAlgorithm):
-    """
-    This is an example algorithm that takes a vector layer and
-    creates a new identical one.
-
-    It is meant to be used as an example of how to create your own
-    algorithms and explain methods and variables used to do it. An
-    algorithm like this will be available in all elements, and there
-    is not need for additional work.
-
-    All Processing algorithms should extend the QgsProcessingAlgorithm
-    class.
-    """
-
-    # Constants used to refer to parameters and outputs. They will be
-    # used when calling the algorithm from another algorithm, or when
-    # calling from the QGIS console.
-
-    OUTPUT = 'OUTPUT'
+    FLAGS = 'FLAGS'
     INPUT = 'INPUT'
 
-    def initAlgorithm(self, config):
-        """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
-        """
+#Inicia o algoritmo
 
-        # We add the input vector features source. It can have any kind of
-        # geometry.
+    def initAlgorithm(self, config=None):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.INPUT,
-                self.tr('Input layer'),
-                [QgsProcessing.TypeVectorAnyGeometry]
+                self.tr('Input'),
+                [
+                    QgsProcessing.TypeVectorLine,
+                ]
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
             QgsProcessingParameterFeatureSink(
-                self.OUTPUT,
-                self.tr('Output layer')
+                self.FLAGS,
+                self.tr('{0} Flags').format(self.displayName())
             )
         )
 
     def processAlgorithm(self, parameters, context, feedback):
-        """
-        Here is where the processing itself takes place.
-        """
 
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
-        source = self.parameterAsSource(parameters, self.INPUT, context)
-        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                context, source.fields(), source.wkbType(), source.sourceCrs())
+        #Recebendo as linhas como vetores
 
-        # Compute the number of steps to display within the progress bar and
-        # get features from source
-        total = 100.0 / source.featureCount() if source.featureCount() else 0
-        features = source.getFeatures()
+        lines = self.parameterAsVectorLayer(
+            parameters,
+            'INPUT',
+            context
+        )
+        self.prepareFlagSink(parameters, lines, QgsWkbTypes.Point, context)
 
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
-            if feedback.isCanceled():
+        # Diicionario de pontos de entrada e saida
+        DicionarioEntradaSaida = {}
+
+
+        # Iteracao entre as linhas do dicionario
+
+        lineCount = lines.featureCount()
+        if lineCount == 0:
+            return {self.FLAGS: self.flag_id}
+        multiStepFeedback = QgsProcessingMultiStepFeedback(2, feedback)
+        multiStepFeedback.setCurrentStep(0)
+        multiStepFeedback.setProgressText(self.tr("Verificando estrtutura"))
+        stepSize = 100/lineCount
+
+        for current, line in enumerate(lines.getFeatures()):
+            if multiStepFeedback.isCanceled():
                 break
+            geom = list(line.geometry().vertices())
+            if len(geom) == 0:
+                continue
+            first_vertex = geom[0]
+            last_vertex = geom[-1]
 
-            # Add a feature in the sink
-            sink.addFeature(feature, QgsFeatureSink.FastInsert)
+            if first_vertex.asWkt() not in DicionarioEntradaSaida:
+                DicionarioEntradaSaida[first_vertex.asWkt()] = { "entrada": 0, "saida": 0}
 
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
+            if last_vertex.asWkt() not in DicionarioEntradaSaida:
+                DicionarioEntradaSaida[last_vertex.asWkt()] = { "entrada": 0, "saida": 0}
+            
+            DicionarioEntradaSaida[first_vertex.asWkt()]["saida"] += 1
+            DicionarioEntradaSaida[last_vertex.asWkt()]["entrada"] += 1
+            multiStepFeedback.setProgress(current * stepSize)
+        
+        multiStepFeedback.setCurrentStep(1)
+        multiStepFeedback.setProgressText(self.tr("Raising flags..."))
+        stepSize = 100/len(DicionarioEntradaSaida)
+        #Iteracao no dicionario
 
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
-        return {self.OUTPUT: dest_id}
+
+        for current, (pointStr, entradaesaida) in enumerate(DicionarioEntradaSaida.items()):
+            if multiStepFeedback.isCanceled():
+                break
+            errorMsg = self.Errolocal(entradaesaida)
+            if errorMsg != '':
+                self.flagFeature(
+                    flagGeom= QgsGeometry.fromWkt(pointStr),
+                    flagText=self.tr(errorMsg)
+                )
+            multiStepFeedback.setProgress(current * stepSize)
+
+        return {self.FLAGS: self.flag_id}
+
+    def Errolocal(self, entradaesaida):
+        entrada = entradaesaida["entrada"]
+        saida = entradaesaida["saida"]
+        total = entrada + saida
+
+        if total == 1:
+            return ''
+        if total >= 4:
+            return '4 ou mais linhas conectadas no ponto'
+        
+        if (entrada == 0):
+            return 'Há apenas saídas'
+
+        if (saida == 0):
+            return 'Há apenas entradas'
+
+        return ''
 
     def name(self):
         """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
+        Solução do Projeto 2
         """
         return 'Solução do Projeto 2'
 
     def displayName(self):
         """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
+        Retorna o nome do algoritmo traduzido.
         """
         return self.tr(self.name())
 
@@ -158,8 +181,9 @@ class Projeto2Solucao(QgsProcessingAlgorithm):
         """
         return 'Projeto 2'
 
+
     def tr(self, string):
-        return QCoreApplication.translate('Processing', string)
+        return QCoreApplication.translate('Projeto2Solucao', string)
 
     def createInstance(self):
         return Projeto2Solucao()
