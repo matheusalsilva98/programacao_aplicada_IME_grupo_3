@@ -115,63 +115,63 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         # dictionary returned by the processAlgorithm function.
         lines_source = self.parameterAsSource(parameters, self.INPUT1, context)
         polygons_source = self.parameterAsSource(parameters, self.INPUT2, context)
-                
-        lines_fields = lines_source.fields()
-        lines_fields.append(QgsField('dentro_de_poligono', QVariant.Bool))
-                
-        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                context, lines_fields, lines_source.wkbType(), lines_source.sourceCrs())
 
         # Compute the number of steps to display within the progress bar and
         # get features from source
-        total = 100.0 / (lines_source.featureCount() + polygons_source.featureCount()) if lines_source.featureCount() and polygons_source.featureCount() else 0
-                
+        total = 100.0 / lines_source.featureCount() if lines_source.featureCount() else 0
+
+        lines_fields = lines_source.fields()
+        lines_fields.append(QgsField('dentro_de_poligono', QVariant.Bool))
+
+        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
+                            context, lines_fields, lines_source.wkbType(), lines_source.sourceCrs())
+
         line_features = lines_source.getFeatures()
         polygons_features = polygons_source.getFeatures()
-                
+
         polyg_source_id_dict = {}
-        polyg_source_spacial_idx = QgsSpatialIndex()
-                
+        polyg_source_spacial_idx = QgsSpatialIndex(polygons_source.getFeatures())
+
         for j, feat_line in enumerate(line_features):
             # Stop the algorithm if cancel button has been clicked
             if feedback.isCanceled():
                 break
-                        
+
+            feat_line.setFields(lines_fields)
+            feat_line['dentro_de_poligono'] = False
+            
+            new_feat = QgsFeature(lines_fields)
+            for field in lines_fields:
+                new_feat[field.name()] = feat_line[field.name()]
+                
+            new_feat.setGeometry(QgsGeometry.fromWkt(feat_line.geometry().asWkt()))
+
             geom_line = feat_line.geometry()
             bbox = geom_line.boundingBox()
             request = QgsFeatureRequest(bbox)
-                        
+
             for feat_polyg in polygons_source.getFeatures(request):
                 # Stop the algorithm if cancel button has been clicked
                 if feedback.isCanceled():
                     break
-                            
+
                 polyg_source_id_dict[feat_polyg.id()] = feat_polyg
                 polyg_source_spacial_idx.addFeature(feat_polyg)
                 geom_polyg = feat_polyg.geometry()
                 line_geom_engine = QgsGeometry.createGeometryEngine(geom_line.constGet())
                 line_geom_engine.prepareGeometry()
-                            
+
                 if line_geom_engine.within(geom_polyg.constGet()):
-                    new_feat = QgsFeature(lines_fields)
-                    for field in lines_fields:
-                        new_feat[field.name()] = feat_line[field.name()]
-                    new_feat.setGeometry(QgsGeometry.fromWkt(geom_line.asWkt()))
-                    new_feat['dentro_de_poligono'] = True
-                    sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
-                                
-                else:
-                    new_feat = QgsFeature(lines_fields)
-                    for field in lines_fields:
-                        new_feat[field.name()] = feat_line[field.name()]
-                    new_feat.setGeometry(QgsGeometry.fromWkt(geom_line.asWkt()))
-                    new_feat['dentro_de_poligono'] = False
-                    sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
-                                
+                    new_feat['dentro_de_poligono'] = True 
+
+                sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+
             # Update the progress bar
-            feedback.setProgress(int((j + 1) * total))
+            feedback.setProgress(int(j * total))
+
 
         return {self.OUTPUT: dest_id}
+
 
 
     def name(self):
