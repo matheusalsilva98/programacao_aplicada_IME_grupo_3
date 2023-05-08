@@ -141,6 +141,7 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
             feat_line['dentro_de_poligono'] = False
             
             new_feat = QgsFeature(lines_fields)
+            
             for field in lines_fields:
                 new_feat[field.name()] = feat_line[field.name()]
 
@@ -164,7 +165,7 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
                 if line_geom_engine.within(geom_polyg.constGet()):
                     new_feat['dentro_de_poligono'] = True 
 
-                sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+            sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
 
             # Update the progress bar
             feedback.setProgress(int(j * total))
