@@ -537,7 +537,17 @@ class Projeto2Solucao(QgsProcessingAlgorithm):
                 self.FLAGS_LINHA: dest_id_linha,
                 self.FLAGS_POLIGONO: dest_id_poligono}            
 
+    def erroQtdEntramSaem(self, qtdEntramSaem):
+        chegando = qtdEntramSaem["chegando"]
+        saindo = qtdEntramSaem["saindo"]
+        
+        if (chegando == 0):
+            return 'Não tem linhas chegando, mas tem linhas saindo.'
 
+        if (saindo == 0):
+            return 'Não tem linhas saindo, mas tem linhas chegando.'
+
+        return ''
 
     def name(self):
         """
