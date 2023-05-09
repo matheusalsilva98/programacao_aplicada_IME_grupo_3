@@ -142,7 +142,7 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
 
         # Criando uma variável que tem por finalidade armazenar os valores dos erros,  erros = z_t - z_r.
         lista_erros = []
-
+#########################################################################################################
         for current, feature in enumerate(features):
             # Caso o usuário desejar, poderá cancelar o processo do código.
             if feedback.isCanceled():
@@ -156,7 +156,7 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
                 flagFeature = QgsFeature(fields)
 
 
-                # Para completar o atributo dos pontos gerados, precisamos comparar o valor do z presente no arquivo tiff do raster
+                # Para completar o atributo dos pontos gerados, precisamos comparar o valor do z (altura) presente no arquivo tiff do raster
                 # e do z que está presente no csv.
                 # Inicialmente adquirindo o z presente no arquivo tiff do raster e armazenando na variável z_t, temos:
                 z_t = raster.dataProvider().sample(QgsPointXY(feature.geometry().asPoint()), 1)[0]
@@ -184,7 +184,7 @@ class Projeto1Solucao(QgsProcessingAlgorithm):
             # Barra de progresso que aparece na interface do usuário.
             feedback.setProgress(int(current * total))
         
-        # Pomemos agora, depois de adquirir todos os pontos na lista dos erros, chamada de lista_erros, podemos calcular o EMQz e 
+        # Podemos agora, depois de adquirir todos os pontos na lista dos erros, chamada de lista_erros, podemos calcular o EMQz e 
         # definir para qual PEC encaixa.
         EMQz = 0
         for ezi in lista_erros:
