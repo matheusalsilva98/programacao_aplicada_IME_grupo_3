@@ -442,8 +442,100 @@ class Projeto2Solucao(QgsProcessingAlgorithm):
             
             multiStepFeedback.setCurrentStep(7)
                 
+        ################################### PROBLEMA 7 ######################################
+        # Identificar os objetos da classe canal que não possuem linha de drenagem coincidentes
+        if canal is None:
+            pass
+        else:
+            # Criando a lista que vai ser responsável por adicionar os índices dos canais que possuem
+            # conexão com as drenagens:
+            idCanalDren = []
 
+            # Criando um dicionário para adicionar as feições do canal que serão analisadas e 
+            # seu respectivo índice espacial:
+            dictCanal = {}
+            canalSpatialIndex = QgsSpatialIndex()
+
+            # Iterando para adicionar as feições:
+            for c in canal.getFeatures():
+                dictCanal[c.id()] = c
+                canalSpatialIndex.addFeature(c)
             
+            total = total / drenagem.featureCount()
+            
+            for current, drFeat in enumerate(drenagem.getFeatures()):
+                # Se o usuário desejar cancelar:
+                if feedback.isCanceled():
+                    break
+                # Pegando a geometria e o bounding box correspondentes de cada drenagem, temos:
+                drGeom = drFeat.geometry()
+                bboxDren = drGeom.boundingBox()
+                for idCanal in canalSpatialIndex.intersects(bboxDren):
+                    if drGeom.equals(dictCanal[idCanal].geometry()):
+                        idCanalDren.append(idCanal)
+
+                multiStepFeedback.setProgress(int(current * total))
+
+            multiStepFeedback.setCurrentStep(8)
+            
+
+            # Analisando todos os id's que temos nos canais e os id's que foram armazenados na nossa lista 
+            # chamada de idCanalDren, as que não estão na tal lista são as feições que devem ser colocadas
+            # na nossa camada de saída.
+            for i in list(dictCanal.keys()):
+                if i not in idCanalDren:
+                    flagFeature = QgsFeature(fields)
+                    flagFeature.setGeometry(QgsGeometry.fromWkt(dictCanal[i].geometry().asWkt()))
+                    flagFeature["motivo_da_flag"] = "Não se pode ter canal sem estar ligado à drenagem."
+                    # Adicionando na camada de saída
+                    sink_linha.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+                
+            
+        ##################################### PROBLEMA 8 #######################################
+        if vs is None:
+            pass
+        else:
+            # Verificar vertedouros e sumidouros isolados sem se relacionar a uma drenagem.
+            # Inicialmente criando um dicionário para armazenar os pontos de vertedouros e sumidouros, assim
+            # como os indices espaciais, temos:
+            dictVS = {}
+            vsSpatialIndex = QgsSpatialIndex()
+            for featVS in vs.getFeatures():
+                dictVS[featVS.id()] = featVS
+                vsSpatialIndex.addFeature(featVS)
+
+            total = total / vs.featureCount()
+
+            # Criando a lista de id's dos vertedouros e sumidouros que estão conectadas com uma drenagem, temos:
+            listIdVSDren = []
+            
+            # Iterando sobre as feições das drenagens e analisando para os nossos vertices de vertedouro e sumidouro
+            # se realmente faz parte de alguma drenagem ou não.
+            for current, dFeat in enumerate(drenagem.getFeatures()):
+                if feedback.isCanceled():
+                    break
+                # Pegando a geometria e o bounding box correspondente, temos:
+                dGeom = dFeat.geometry()
+                bboxDren = dGeom.boundingBox()
+                for idVS in vsSpatialIndex.intersects(bboxDren):
+                    listIdVSDren.append(idVS)
+                
+                multiStepFeedback.setProgress(int(current * total))
+
+            multiStepFeedback.setCurrentStep(9)
+            
+            for id in list(dictVS.keys()):
+                if id not in listIdVSDren:
+                    flagFeature = QgsFeature(fields)
+                    flagFeature.setGeometry(QgsGeometry.fromWkt(dictVS[id].geometry().asWkt()))
+                    flagFeature["motivo_da_flag"] = "Vertedouro ou Sumidouro não conectado a uma drenagem."
+                    # Adicionando na camada de saída correspondente a um ponto
+                    sink.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+
+        # O retorno  do nosso processAlgorithm.
+        return {self.FLAGS: dest_id,
+                self.FLAGS_LINHA: dest_id_linha,
+                self.FLAGS_POLIGONO: dest_id_poligono}            
 
 
 
