@@ -71,13 +71,7 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
     INPUT2 = 'INPUT2'
 
     def initAlgorithm(self, config=None):
-        """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
-        """
 
-        # We add the input vector features source. It can have any kind of
-        # geometry.
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.INPUT1,
@@ -94,9 +88,6 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
