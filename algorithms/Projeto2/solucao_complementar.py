@@ -106,74 +106,72 @@ class Projeto2SolucaoComplementar(QgsProcessingAlgorithm):
         )
 
     def processAlgorithm(self, parameters, context, feedback):
-        """
-        Here is where the processing itself takes place.
-        """
-
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
+        
+        # Get the input sources for lines and polygons
         lines_source = self.parameterAsSource(parameters, self.INPUT1, context)
         polygons_source = self.parameterAsSource(parameters, self.INPUT2, context)
-
-        # Compute the number of steps to display within the progress bar and
-        # get features from source
+        
+        # Calculate the total progress based on the number of features in the lines source
         total = 100.0 / lines_source.featureCount() if lines_source.featureCount() else 0
-
+        
+        # Get the fields from the lines source and append a new field for the output indicating if the line is inside a polygon
         lines_fields = lines_source.fields()
         lines_fields.append(QgsField('dentro_de_poligono', QVariant.Bool))
-
+        
+        # Get the sink for the output data and prepare it with the fields from the lines source
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
                             context, lines_fields, lines_source.wkbType(), lines_source.sourceCrs())
-
+        
+        # Get the features from the lines and polygons sources
         line_features = lines_source.getFeatures()
         polygons_features = polygons_source.getFeatures()
-
-        #polyg_source_id_dict = {}
-        #polyg_source_spacial_idx = QgsSpatialIndex(polygons_source.getFeatures())
-
+        
+        # Loop through each line feature
         for j, feat_line in enumerate(line_features):
+            
             # Stop the algorithm if cancel button has been clicked
             if feedback.isCanceled():
                 break
-
-            feat_line.setFields(lines_fields)
-            feat_line['dentro_de_poligono'] = False
             
+            # Create a new feature for the output with the same fields as the lines source
+            # and set False for the output field by default
             new_feat = QgsFeature(lines_fields)
-            
-            for field in lines_fields:
+            new_feat['dentro_de_poligono'] = False
+            for field in lines_source.fields():
                 new_feat[field.name()] = feat_line[field.name()]
-
             new_feat.setGeometry(QgsGeometry.fromWkt(feat_line.geometry().asWkt()))
-
+            
+            # Get the geometry of the line feature and create a bounding box 
+            # to use for the request to get polygons that intersect with it
             geom_line = feat_line.geometry()
             bbox = geom_line.boundingBox()
             request = QgsFeatureRequest(bbox)
-
+            
+            # Loop through each polygon feature that intersects with the bounding box of the line feature
             for feat_polyg in polygons_source.getFeatures(request):
+                
                 # Stop the algorithm if cancel button has been clicked
                 if feedback.isCanceled():
                     break
-
-                #polyg_source_id_dict[feat_polyg.id()] = feat_polyg
-                #polyg_source_spacial_idx.addFeature(feat_polyg)
+                
+                # Get the geometry of the polygon feature and create a geometry engine 
+                # for the line feature to test if it is inside the polygon
                 geom_polyg = feat_polyg.geometry()
                 line_geom_engine = QgsGeometry.createGeometryEngine(geom_line.constGet())
                 line_geom_engine.prepareGeometry()
-
+                
+                # If the line is inside the polygon, set the output field to True
                 if line_geom_engine.within(geom_polyg.constGet()):
                     new_feat['dentro_de_poligono'] = True 
-
+            
+            # Add the new feature to the sink for the output data
             sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
 
             # Update the progress bar
             feedback.setProgress(int(j * total))
 
-
+        # Return the ID of the output layer
         return {self.OUTPUT: dest_id}
-
-
 
     def name(self):
         """
