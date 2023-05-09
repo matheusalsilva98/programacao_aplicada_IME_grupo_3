@@ -304,6 +304,147 @@ class Projeto2Solucao(QgsProcessingAlgorithm):
                 multiStepFeedback.setProgress(int(current * total))
 
             multiStepFeedback.setCurrentStep(4)
+        
+        ################################  PROBLEMA 4, 5 e 6 ##########################################
+        # Vamos analisar as drenagens que se iniciam no ocenano/baía/enseada
+        # Analisando os seguintes casos:
+        # - massas d'água com fluxo sem drenagens internas
+        # - massas d'água sem fluxo com drenagens internas
+        if massaAgua is None:
+            pass
+        else: 
+            # Criando um dicionário que será responsável pelo armazenamento das feições da massas d'água
+            # que é dado por oceano/baía/enseada (sem fluxo) e seu respectivo indice espacial, fazendo o
+            # mesmo para as massas d'água que possuem fluxo.
+            dictMassasDaguaSemFluxo = {}
+            massaDaguaSemFluxoSpatialIndex = QgsSpatialIndex()
+            dictMassasDaguaComFluxo = {}
+            massaDaguaComFluxoSpatialIndex = QgsSpatialIndex()
+
+            # Criando uma lista que vai adicionar todas as feições das massas d'água com fluxo:
+            listMassasComFluxo = []
+
+            # Iterando para adicionar os que desejamos no dicionário e indice espacial correto:
+            for massaDAgua in massaAgua.getFeatures():
+                if massaDAgua["tipomassadagua"] in [3, 4, 5]:
+                    dictMassasDaguaSemFluxo[massaDAgua.id()] = massaDAgua
+                    massaDaguaSemFluxoSpatialIndex.addFeature(massaDAgua)
+                else:
+                    dictMassasDaguaComFluxo[massaDAgua.id()] = massaDAgua
+                    massaDaguaComFluxoSpatialIndex.addFeature(massaDAgua)
+                    listMassasComFluxo.append(massaDAgua.geometry())
+            
+            # Criando um dicionário para armazenar cada feição das massas d'água com fluxo e com um contador 
+            # de quantos pontos estão em seu interior, além disso criando uma lista para adicionar os id's das feições
+            # que foram adicionadas no dicionário, temos:
+            dictFluxoCont = {}
+            idFluxo = []
+
+            total = total / len(dictEntramSaem.keys())
+
+            # Agora iremos pegar do contexto espacial para analisar as drenagens que se intersectam 
+            # com as massas d'água de oceano/baía/enseada (sem fluxo) para o problema 4
+            for current, (ponto, qtdEntramSaem) in enumerate(dictEntramSaem.items()):
+                # Se o usuário desejar cancelar o processo:
+                if multiStepFeedback.isCanceled():
+                    break
+                # Criando a variável que é a feição do ponto:
+                pontoFeature = QgsFeature()
+                pontoFeature.setGeometry(QgsGeometry.fromWkt(ponto))
+                # Geometria da feição do ponto:
+                pontoGeom = pontoFeature.geometry()
+                # Criando o bounding box a partir da geometria do ponto:
+                bbox = pontoGeom.boundingBox()
+                # Iterando sobre os indices espaciais das massa d'água que intersectam com as drenagens:
+                for idMassaDagua in massaDaguaSemFluxoSpatialIndex.intersects(bbox):
+                    # Acessando a feição a partir do dicionário:
+                    featureMassaDagua = dictMassasDaguaSemFluxo[idMassaDagua]
+                    geomMassaDagua = featureMassaDagua.geometry()
+                    # Analisando se intersecta para analisar o problema 4, onde não podemos ter drenagens com fluxo
+                    # saindo do oceano/baía/enseada:
+                    if geomMassaDagua.intersects(pontoGeom):
+                        if (qtdEntramSaem["chegando"] == 0 and qtdEntramSaem["saindo"] == 1):
+                            flagFeature = QgsFeature(fields)
+                            flagFeature.setGeometry(QgsGeometry.fromWkt(ponto))
+                            flagFeature["motivo_da_flag"] = "Não se pode ter drenagem saindo de oceano/baía/enseada."
+                            # Adicionando na camada de saída, temos:
+                            sink.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+
+                # PROBLEMA 5
+                # Iterando em cima dos pontos do dicionário, vamos analisar se o ponto faz intersecção com cada feição
+                # das massas d'água com fluxo, e dentro um contador para cada feição, as que possuírem apenas 1 ou 0 
+                # não possuem dentro de si drenagem.
+                for idMassasComFluxo in massaDaguaComFluxoSpatialIndex.intersects(bbox):
+                    # Adicionando a feição da massa em uma variável, temos:
+                    featureMassaFluxo = dictMassasDaguaComFluxo[idMassasComFluxo]
+                    geomMassaFluxo = featureMassaFluxo.geometry()
+                    if geomMassaFluxo.asWkt() not in dictFluxoCont:
+                        dictFluxoCont[geomMassaFluxo.asWkt()] = {"Pontos": 0}
+                    dictFluxoCont[geomMassaFluxo.asWkt()]["Pontos"] += 1
+                    idFluxo.append(idMassasComFluxo)
+                
+                multiStepFeedback.setProgress(int(current * total))
+
+            multiStepFeedback.setCurrentStep(5)
+
+            # Iterando sobre todos os índices das massas d'água e observando quais não estão na lista idFluxo
+            # os que não estiverem, vamos adicionar à camada de saída.
+            for i in list(dictMassasDaguaComFluxo.keys()):
+                if i not in idFluxo:
+                    flagFeature = QgsFeature(fields)
+                    flagFeature.setGeometry(QgsGeometry.fromWkt(dictMassasDaguaComFluxo[i].geometry().asWkt()))
+                    flagFeature["motivo_da_flag"] = "Não se pode ter massas d'água com fluxo sem drenagem interna."
+                    # Adicionando na camada de saída, temos:
+                    sink_poligono.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+
+            total = total / len((dictFluxoCont.keys()))
+
+            # Iterando sobre o dicionário e verificando se há 1 ou 0 pontos no seu interior, temos:
+            for current2, (chave, qtsPontos) in enumerate(dictFluxoCont.items()):
+                if qtsPontos["Pontos"] == 1 or qtsPontos["Pontos"] == 0:
+                    flagFeature = QgsFeature(fields)
+                    flagFeature.setGeometry(QgsGeometry.fromWkt(chave))
+                    flagFeature["motivo_da_flag"] = "Não se pode ter massas d'água com fluxo sem drenagem interna."
+                    # Adicionando na camada de saída, temos:
+                    sink_poligono.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+
+                multiStepFeedback.setProgress(int(current2 * total))
+            
+            multiStepFeedback.setCurrentStep(6)
+
+            # Iterando nas drenagens de forma que iremos pegar as drenagens e analisar se as drenagens 
+            # atravessam as massas d'água sem fluxo, ou não atravessam as massas d'água com fluxo.
+
+            total = total / drenagem.featureCount()
+
+            for current3, dFeat in enumerate(drenagem.getFeatures()):
+                # Se o usuário desejar cancelar o processo:
+                if multiStepFeedback.isCanceled():
+                    break
+                # Geometria da feição das drenagem que está sendo iterada, uma a uma.
+                dGeom = dFeat.geometry()
+                # Criando o bouding box a partir da geometria da feição da drenagem
+                bboxDrenagem = dGeom.boundingBox()
+                # Iterando sobre os índices espaciais das massas d'água sem fluxo que cruzam com as drenagens:
+                for idMassaDagua in massaDaguaSemFluxoSpatialIndex.intersects(bboxDrenagem):
+                    # Acessando a feição a partir do dicionário:
+                    featureMassaDagua = dictMassasDaguaSemFluxo[idMassaDagua]
+                    geomMassaDagua = featureMassaDagua.geometry()
+                    # Analisando se cruza para analisar se drenagem cruza oceano/baía/enseada:
+                    if dGeom.crosses(geomMassaDagua):
+                        flagFeature = QgsFeature(fields)
+                        flagFeature.setGeometry(QgsGeometry.fromWkt(dGeom.asWkt()))
+                        flagFeature["motivo_da_flag"] = "Não se pode ter drenagem atravessando a massa d'água."
+                        # Adicionando na camada de saída, temos:
+                        sink_linha.addFeature(flagFeature, QgsFeatureSink.FastInsert)
+                
+                multiStepFeedback.setProgress(int(current3 * total))
+            
+            multiStepFeedback.setCurrentStep(7)
+                
+
+            
+
 
 
     def name(self):
