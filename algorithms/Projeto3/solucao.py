@@ -370,7 +370,7 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
                 geomEdiBufEsq = featEdiBufEsq.geometry()
 
                 # Adicionando na lista o índice do edifício:
-                edificiosInt.append(idEdificio)
+                edificiosInt.append(idEdificioEsq)
 
                 # Analisando o predicado espacial e armazenando os edifícios que estão dentro das rodovias buffadas na esquerda,
                 # temos:
