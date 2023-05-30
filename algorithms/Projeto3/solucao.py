@@ -456,3 +456,436 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
 
         # Criando o dicionário para as feições que substituirão:
         dictEdificiosOri = {}
+
+        # Percorrendo agora o dicionário dos edifícios que estão dentro da rodovia buffada na direita:
+        for current4, (id, idRodovia) in enumerate(dictEdiDentroBufDir.items()):
+            # Caso o usuário deseje parar o processo, teremos:
+            if feedback.isCanceled():
+                break
+            
+            # Analisando se o índice também não está dentro da listaDuasDirecoes, iremos fazer as devidas alterações
+            #if id in listaDuasDirecoes:
+            #    continue
+            
+            # Caso não esteja na lista, vamos armazenar tanto o ponto que representa o edifício quanto a feature de linestring
+            # que representa a rodovia e armazenando em uma variável, puxando pelo dicionário de id's
+            
+            # Agora precisa ser analisado o fato do edifício ter consigo mais de uma correspondência no dicionário das distâncias
+            # (dictDistEdiRodoDir), para assim, escolher a menor e pegar o id da linestring da rodovia que representa essa menor
+            # distância.
+            
+            # Criando uma variável de menor distância que irá percorrer os items do dicionário que corresponde a chave do id analisado
+            # na presente iteração
+            if len(dictDistEdiRodoDir[id].items()) > 1:
+                menor_dist = 9999
+                for i in list(dictDistEdiRodoDir[id].items()):
+                    if i[1] < menor_dist:
+                        menor_dist = i[1]
+                        idProcurado = i[0] # Id procurado da feição da rodovia, que será puxado do dicionário das rodovias.
+            
+                # Armazenando em uma variável a feição da rodovia puxando a feição pelo id, no dicionário criado:
+                fRodovia = dictRodovias[idProcurado]
+            else:
+                # Caso só tenha uma feição com distância dentro, então é o id da própria iteração:
+                fRodovia = dictRodovias[idRodovia]
+            
+            # Armazenando em uma variável a feição do edifício puxando a feição pelo id, no dicionário criado:
+            fEdificio = dictEdificios[id]
+
+            # Coletando as geometrias dessas feições, teremos:
+            gRodovia = fRodovia.geometry()
+            gEdificio = fEdificio.geometry()
+
+            # Encontrando as coordenadas tranto da geometria do edifício, como das coordenadas do ínicio e do
+            # final da geometria da rodovia:
+            # Separando nas coordenadas x e y de cada ponto, tanto do ínicio quanto do final.
+            xInicRodDir = float(f"{gRodovia}".split("(")[1].split(")")[0].split(", ")[0].split(" ")[0])          
+            yInicRodDir = float(f"{gRodovia}".split("(")[1].split(")")[0].split(", ")[0].split(" ")[1])          
+            xFinRodDir = float(f"{gRodovia}".split("(")[1].split(")")[0].split(", ")[1].split(" ")[0])
+            yFinRodDir = float(f"{gRodovia}".split("(")[1].split(")")[0].split(", ")[1].split(" ")[1])
+
+            # Para a coordenada do edifício, temos:
+            xEdiDir = float(f"{gEdificio}".split("((")[1].split("))")[0].split(" ")[0])
+            yEdiDir = float(f"{gEdificio}".split("((")[1].split("))")[0].split(" ")[1])
+
+            # Encontrando a equação da reta da linestring, temos:
+            # Coeficiente angular da linestring, por meio das coordenadas finais e iniciais:
+            coefAng = (yFinRodDir - yInicRodDir) / (xFinRodDir - xInicRodDir)
+
+            coefAngPerp = -(coefAng ** (-1)) # Coeficiente angular da reta que está na perpendicular da linestring da menor distância
+            # direção que será movida o edifício.
+
+            # Encontrando o ponto que quando se traça a perpendicular pelo edifício, corta a rodovia, temos:
+            # Chamando os pontos da coordenada de xOrt e yOrt:
+            xOrt = ((yEdiDir - yFinRodDir) - (coefAngPerp * xEdiDir) + (coefAng * xFinRodDir)) / (coefAng - coefAngPerp)
+            yOrt = yEdiDir + coefAngPerp * (xOrt - xEdiDir)
+
+            # Encontrando o vetor diretor que deverá ser feito o deslocamento, dado por:
+            xVetorDeslocamento = (xEdiDir - xOrt)
+            yVetorDeslocamento = (yEdiDir - yOrt)
+            
+
+            # Encontrando a constante 't' que se deve multiplicar o vetor direitor para que se consiga uma distância
+            # necessária para calcular a coordenada onde o centro do edifício vai ficar para que não se intersecte mais
+            # com a rodovia
+            t = ((12.7 + 12.5 * (2) ** (1/2)) ** 2 / (xVetorDeslocamento ** 2 + yVetorDeslocamento ** 2)) ** (1/2)
+
+            # De posse do valor da constante t, teremos então as novas coordenadas do edifício:
+            xEdi = t * xVetorDeslocamento + xOrt
+            yEdi = t * yVetorDeslocamento + yOrt
+
+            # A distância do deslocamento efetivo do ponto será dado pela distância que vai se colocar da rodovia menos a
+            # a distância que ele estava anteriormente
+            distanciaDeslocamento = (12.7 + 12.5 * (2) ** (1/2)) - dictDistEdiRodoDir[id][fRodovia.id()]
+
+            # Verificando se a distancia de deslocamento do bloco foi menor que a distância máxima colocada no input
+            if distanciaDeslocamento < dist_deslocamento:
+                
+                # Adicionando no dicionário criado para adicionar as feições com as suas respectivas distâncias de deslocamento:
+                dictEdiDistancia[id] = distanciaDeslocamento
+                # Teremos então o controle de quanto cada feição está se deslocando
+
+                # Criando uma feature que será adicionada ao dicionário como sendo a nova correspondência 
+                # no dicionário que foi criado anteriormente para as edificações
+                featOri = QgsFeature()
+                featOri.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xEdi, yEdi)))
+
+                # Adicionando no dicionário como sendo a feature original, temos:
+                dictEdificiosOri[id] = featOri
+
+                # Adicionando no dicionário como ed
+
+                # Criando a feição que será adicionado na camada de saída
+                featSaida = QgsFeature()
+                featSaida.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xEdi, yEdi)).buffer(25, -1))
+
+                # Adicionando no dicionário como edifício deslocado, temos:
+                dictEdificiosDeslocados[id] = featSaida
+
+                # Adicionando na camada de saída:
+                #sink.addFeature(featSaida, QgsFeatureSink.FastInsert)
+        
+        # Multistepfeedback
+        multiStepFeedback.setCurrentStep(5)
+        
+        # Percorrendo agora o dicionário dos edifícios que estão dentro da rodovia buffada na esquerda:
+        for current5, (idE, idR) in enumerate(dictEdiDentroBufEsq.items()):
+            # Caso o usuário deseje para o processamento:
+            if feedback.isCanceled():
+                break
+            
+            # Analisando também se o índice não está presente na listaDuasDirecoes, iremos fazer as devidas alterações:
+            #if idE in listaDuasDirecoes:
+            #    continue
+            
+            # Caso o id não esteja na lista acima, iremos armazenar as features dentro de variáveis para a analise das suas
+            # geometrias.
+
+            # Agora é necessário analisar no dicionário que possui o índice das features dos edifícios e analisar se elas
+            # correspondem a mais de uma feature de rodovia e assim pegar a menor e o índice da rodovia correspondente, 
+            # pelo dicionário (dictDistEdiRodoEsq)
+            
+            if len(dictDistEdiRodoEsq[idE].items()) > 1:
+                menor_dist_esq = 9999
+                for i in list(dictDistEdiRodoEsq[idE].items()):
+                    if i[1] < menor_dist_esq:
+                        menor_dist_esq = i[1]
+                        idProcuradaEsq = i[0] # Id procurado das rodovias, que será puxado do dicionário das rodovias
+
+                        # Adicionando em uma variável a feição da rodovia encontrada:
+                        fRodoviaEsq = dictRodovias[idProcuradaEsq]
+            else:
+                # Caso só tenha apenas uma feição dentro dos valores com a sua respectiva distância, podemos fazer:
+                fRodoviaEsq = dictRodovias[idR]
+
+            # Armazenando em uma variável a feature do edifício, puxando do dicionário dos edifícios:
+            fEdificioEsq = dictEdificios[idE]
+
+            # Gerando então as geometrias de cada uma dessas features, temos:
+            gEdificioEsq = fEdificioEsq.geometry()
+            gRodoviaEsq = fRodoviaEsq.geometry()
+
+            # Encontrando as coordenadas dos edifícios, assim como as coordenadas do ínicio e do final das linestrings que 
+            # representam as rodovias, temos:
+            # Separando nas coordenadas x e y, tanto do ínicio como do final:
+            xInicRodEsq = float(f"{gRodoviaEsq}".split("(")[1].split(")")[0].split(", ")[0].split(" ")[0])
+            yInicRodEsq = float(f"{gRodoviaEsq}".split("(")[1].split(")")[0].split(", ")[0].split(" ")[1])
+            xFinRodEsq = float(f"{gRodoviaEsq}".split("(")[1].split(")")[0].split(", ")[1].split(" ")[0])
+            yFinRodEsq = float(f"{gRodoviaEsq}".split("(")[1].split(")")[0].split(", ")[1].split(" ")[1])
+                    
+            # Para as coordenadas do edifício, temos:
+            xEdiEsq = float(f"{gEdificioEsq}".split("((")[1].split("))")[0].split(" ")[0])
+            yEdiEsq = float(f"{gEdificioEsq}".split("((")[1].split("))")[0].split(" ")[1])
+            
+
+            # Encontrando a equação da reta que rege a linestring da rodovia, temos:
+            # Encontrando inicialmente o coeficiente angular da reta:
+            coefAngEsq = (yFinRodEsq - yInicRodEsq) / (xFinRodEsq - xInicRodEsq)
+
+            coefAngPerpEsq = -(coefAngEsq ** (-1)) # Coeficiente angular da reta perpendicular a reta da linestring que possui a
+            # direção igual a direção que se deverá deslocar o edifício (ortogonalmente à rodovia).
+
+            # Encontrando o ponto na linestring que se encontra quando se traça a perpendicular a partir do edifício
+            # na rodovia, temos:
+            # Chamando de xOrtEsq e yOrtEsq esses pontos:
+            xOrtEsq = ((yEdiEsq - yFinRodEsq) - (coefAngPerpEsq * xEdiEsq) + (coefAngEsq * xFinRodEsq)) / (coefAngEsq - coefAngPerpEsq)
+            yOrtEsq = yEdiEsq + coefAngPerpEsq * (xOrtEsq - xEdiEsq)
+
+            # Encontrando o vetor deslocamento que deverá ser realizado o deslocamento do edifício:
+            xVetorDeslocamentoEsq = (xEdiEsq - xOrtEsq)
+            yVetorDeslocamentoEsq = (yEdiEsq - yOrtEsq)
+
+            # Calculando a constante 'tEsq' que deverá se multiplicar o vetor deslocamento para que seja essas a nova coordenada do 
+            # edifício para que esse não intersecte mais a rodovia, temos:
+            tEsq = ((12.7 + 12.5 * (2) ** (1/2)) ** (2) / (xVetorDeslocamentoEsq ** 2 + yVetorDeslocamentoEsq ** 2)) ** (1/2)
+
+            # De posse do valor da constante que se deve multiplicar o vetor diretor, podemos multiplicar pelo vetor diretor, 
+            # para que se consiga encontrar as novas coordenadas do edifício:
+            xE = tEsq * xVetorDeslocamentoEsq + xOrtEsq
+            yE = tEsq * yVetorDeslocamentoEsq + yOrtEsq
+
+            # A distância que esse edifício vai percorrer efetivamente vai ser a distância que ele ficará da rodovia menos a 
+            # distância que ele estava anteriormente da rodovia:
+            distanciaDeslocamentoEsq = (12.7 + 12.5 * (2) ** (1/2)) - dictDistEdiRodoEsq[idE][fRodoviaEsq.id()]
+
+            # Verificando se a distancia de deslocamento do bloco foi menor que a distância máxima colocada no input
+            if distanciaDeslocamentoEsq < dist_deslocamento:
+                # Adicionando no dicionário de distâncias de cada feição, para se conseguir verificar a distância total que cada
+                # feição está se deslocando
+                dictEdiDistancia[idE] = distanciaDeslocamentoEsq
+                # Teremos então o controle de quanto a feição está se deslocando
+
+                # Criando a feição que será adicionado como sendo a nova feição do índice no dicionário original
+                featOri = QgsFeature()
+                featOri.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xE, yE)))
+
+                # Colocando no dicionário
+                dictEdificiosOri[idE] = featOri
+
+                # Criando a feição que será adicionado na camada de saída, temos:
+                featSaidaEsq = QgsFeature()
+                featSaidaEsq.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xE, yE)).buffer(25, -1))
+
+                # Adicionando no dicionário como edifício deslocado
+                dictEdificiosDeslocados[idE] = featSaidaEsq
+
+                # Adicionando na camada de saída:
+                #sink.addFeature(featSaidaEsq, QgsFeatureSink.FastInsert)
+        
+        # Multistepfeedback
+        multiStepFeedback.setCurrentStep(6)
+
+        # Iterando sobre a lista dos pontos que são pontas na feature, realizando um buffer para conseguir o edifício
+        # que está nessa ponta
+        for current7, ponta in enumerate(listaPonta):
+            feature = QgsFeature()
+            feature.setGeometry(QgsGeometry.fromWkt(ponta).buffer(30, 200))
+            # Criando o seu bounding box
+            bboxPonta = feature.geometry().boundingBox()
+            # Iterando sobre os índices dos edificíos para verificar qual está no contexto espacial:
+            for idEdH in edifIndiceEspacial.intersects(bboxPonta):
+                # Descobrindo o vetor que se deverá deslocar o edifício que será dado basicamente
+                # pela diferença vetorial entre a posição do edifício e a posição da ponta:
+                # Coordenadas do ponto do edifício:
+                xEdiH = float(f"{dictEdificios[idEdH].geometry().asWkt()}".split("((")[1].split("))")[0].split(" ")[0])
+                yEdiH = float(f"{dictEdificios[idEdH].geometry().asWkt()}".split("((")[1].split("))")[0].split(" ")[1])
+                
+                # Coordenadas da ponta:
+                xPonta = float(ponta.split("(")[1].split(")")[0].split(" ")[0])
+                yPonta = float(ponta.split("(")[1].split(")")[0].split(" ")[1])
+
+                # Portando o vetor deslocamento será:
+                desl = (xEdiH - xPonta, yEdiH - yPonta)
+
+                # Calculando a constante que se deve multiplicar para que se tenha o deslocamento do edifício
+                # para que não se intersecte mais, será dado por:
+                t = ((18 + 12.5 * (2) ** (1/2)) ** 2 / (desl[0] ** 2 + desl[1] ** 2)) ** (1/2)
+
+                # Deslocando então o edifício com uma soma vetorial:
+                xEdi = t * desl[0] + xPonta
+                yEdi = t * desl[1] + yPonta
+
+                # A distância que o edifício deslocará de fato será:
+                realDist = (18 + 12.5 * (2) ** (1/2)) - (desl[0] ** 2 + desl[1] ** 2) ** (1/2)
+
+                if realDist < dist_deslocamento:
+                    # Adicionando a feature do edifício no dicionário com a sua distância deslocada, temos:
+                    dictEdiDistancia[idEdH] = realDist
+                    # Teremos então o controle de quanto esse edifício deslocou
+
+                    # Pegando a feição original e adicionando na lista como essa nova
+                    featOri = QgsFeature()
+                    featOri.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xEdi, yEdi)))
+
+                    # Substituindo a feição que estava antes por essa agora do featOri
+                    dictEdificiosOri[idEdH] = featOri
+
+                    # Criando a feição que será adicionado na camada de saída, temos:
+                    featSaida = QgsFeature()
+                    featSaida.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xEdi, yEdi)).buffer(25, -1))
+
+                    # Analisando se o índice já se encontra dentro do dicionário para que não tenha dois deslocamentos de um mesmo
+                    # edifício, temos:
+                    if idEdH not in dictEdificiosDeslocados:
+                        dictEdificiosDeslocados[idEdH] = featSaida
+                    
+                    # Adicionando na camada de saída:
+                    #sink.addFeature(featSaida, QgsFeatureSink.FastInsert)
+
+        # Multistepfeedback
+        multiStepFeedback.setCurrentStep(7)
+        
+        for current8, id in enumerate(list(dictEdificios.keys())):
+            if id not in list(dictEdificiosDeslocados.keys()):
+                featSaida = QgsFeature()
+                featSaida.setGeometry(QgsGeometry(dictEdificios[id].geometry().buffer(25, -1)))
+                dictEdificiosDeslocados[id] = featSaida
+            
+            if id not in list(dictEdificiosOri.keys()):
+                featOri = QgsFeature()
+                xOri = float(f"{dictEdificios[id].geometry().asWkt()}".split("((")[1].split("))")[0].split(" ")[0])
+                yOri = float(f"{dictEdificios[id].geometry().asWkt()}".split("((")[1].split("))")[0].split(" ")[1])
+                featOri.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xOri, yOri)))
+                
+                dictEdificiosOri[id] = featOri
+        
+        # Multistepfeedback
+        multiStepFeedback.setCurrentStep(8)
+        
+        # Criando uma lista para armazenar os índices que estão nas duas vias buffadas
+        listaEdiDuas = []
+
+        # Iterando para saber quais edifícios estão interseccionando as duas rodovias:
+        for current9, idV in enumerate(list(dictEdificios.keys())):
+            if idV in dictEdiIntBufDir and idV in dictEdiIntBufEsq:
+                listaEdiDuas.append(idV)
+
+        edificiosInt = set(edificiosInt)
+        edificiosInt = list(edificiosInt)
+
+        # Multistepfeedback
+        multiStepFeedback.setCurrentStep(9)
+        
+        # Iterando sobre os edifícios deslocados e iremos ver se os edíficos deslocados intersectam um 
+        # ao outro
+        itera = 0
+        while itera != 100:
+            for current10, idG in enumerate(list(dictEdificios.keys())):
+                # Caso o usuário deseje parar o processo:
+                if feedback.isCanceled():
+                    break
+
+                if idG not in edificiosInt:
+                    continue
+
+                for current11, idH in enumerate(list(dictEdificios.keys())):
+                    # Caso o usuário deseje parar o processo:
+                    if feedback.isCanceled():
+                        break
+
+                    # Se os índices são os mesmos continue
+                    if idG == idH:
+                        continue
+                    
+                    xRef = float(f"{dictEdificiosOri[idG].geometry().asWkt()}".split("(")[1].split(")")[0].split(" ")[0])
+                    yRef = float(f"{dictEdificiosOri[idG].geometry().asWkt()}".split("(")[1].split(")")[0].split(" ")[1])
+
+                    xDesl = float(f"{dictEdificiosOri[idH].geometry().asWkt()}".split("(")[1].split(")")[0].split(" ")[0])
+                    yDesl = float(f"{dictEdificiosOri[idH].geometry().asWkt()}".split("(")[1].split(")")[0].split(" ")[1])
+
+                    distI = ((xDesl - xRef) ** 2 + (yDesl - yRef) ** 2) ** (1/2)
+
+
+                    if distI > 0 and distI < 35:
+                
+                        vD = (xDesl - xRef, yDesl - yRef)
+
+                        # A constante que deverá se deslocar será dada por:
+                        tD = (35 ** (2) / (vD[0] ** 2 + vD[1] ** 2)) ** (1/2)
+
+                        # Logo a nova coordenada do ponto do edifício será dada por:
+                        xDesl = tD * vD[0] + xRef
+                        yDesl = tD * vD[1] + yRef    
+
+                        # Criando a nova feição que receberá para o índice atual da iteração essas coordenadas, teremos:
+                        novaFeat = QgsFeature()
+                        novaFeat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(xDesl, yDesl)))
+
+                        adicionar = True
+                        
+                        for feat in rodovia.getFeatures():
+                            dist = novaFeat.geometry().distance(feat.geometry())
+
+                            if dist < (12.5 + 12.5 * (2) ** (1/2)):
+                                adicionar = False
+
+                        # Adicionando como sendo essa feature a feature do id da iteração
+                        if adicionar:
+                            dictEdificiosOri[idH] = novaFeat
+
+            itera += 1
+        # Multistepfeedback
+        multiStepFeedback.setCurrentStep(10)
+
+
+        for id in list(dictEdificiosOri.keys()):
+            featSaida = QgsFeature()
+            featSaida.setGeometry(dictEdificiosOri[id].geometry())
+
+            sink.addFeature(featSaida, QgsFeatureSink.FastInsert)
+
+
+        # Armazenando para que se consiga mudar o estilo da camada de saída, temos:
+        self.dest_id=dest_id
+   
+        # Retornando a saída das feições de resultado
+        return {self.OUTPUT: dest_id}
+
+
+    # Definindo a função para que se coloque na camada de saída o estilo do arquivo .qml das edificações
+    def postProcessAlgorithm(self, context, feedback):
+        output = QgsProcessingUtils.mapLayerFromString(self.dest_id, context)
+        path='C:\\Users\\mathe\\OneDrive\\Área de Trabalho\\Trabalhos\\ProgAplicada\\Projeto3\\dados\\edificacoes.qml'
+        output.loadNamedStyle(path)
+        output.triggerRepaint()
+        return {self.OUTPUT: self.dest_id}
+
+    def name(self):
+        """
+        Returns the algorithm name, used for identifying the algorithm. This
+        string should be fixed for the algorithm, and must not be localised.
+        The name should be unique within each provider. Names should contain
+        lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return 'Solução do Projeto 3'
+
+    def displayName(self):
+        """
+        Returns the translated algorithm name, which should be used for any
+        user-visible display of the algorithm name.
+        """
+        return self.tr(self.name())
+
+    def group(self):
+        """
+        Returns the name of the group this algorithm belongs to. This string
+        should be localised.
+        """
+        return self.tr(self.groupId())
+
+    def groupId(self):
+        """
+        Returns the unique ID of the group this algorithm belongs to. This
+        string should be fixed for the algorithm, and must not be localised.
+        The group id should be unique within each provider. Group id should
+        contain lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return 'Projeto 3'
+
+    def tr(self, string):
+        return QCoreApplication.translate('Processing', string)
+
+    def createInstance(self):
+        return Projeto3Solucao()
