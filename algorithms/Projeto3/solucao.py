@@ -273,14 +273,14 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
         # Criando a lista para adicionar o índice dos edifício que fazem intersecção tanto com os dois
         # lados da rodovia, temos:
         edificiosInt = []
-
+        
         # Iterando então sobre as features da camada de rodovias e analisando pelo indice espacial quais edifícios intersectam
         # para a sua analise se o edíficio está contido ou não nesse buffer.
         for current3, featureRod in enumerate(rodovia.getFeatures()):
             # Para o processo caso o usuário deseje.
             if feedback.isCanceled():
                 break
-
+            
             # Encontrando no dicionário de cada buffer da camada da rodovia pelo seu id, temos:
             # Para o buffer no lado da direita
             featRodBufDir = dictBufferDireita[featureRod.id()]
@@ -296,6 +296,7 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
             bboxRodBufDir = geomRodBufDir.boundingBox()
             bboxRodBufEsq = geomRodBufEsq.boundingBox()
 
+
             # Iterando sobre os índices espaciais dos edifícios, para analisar quais índices intersectam o bounding box
             # da rodovia buffada, será feita duas iterações então:
             # A primeira analisando o edifício e o buffer da direita e o segundo analisando o edifício e o buffer da esquerda.
@@ -304,7 +305,7 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
                 # com esses índices vamos acessar a feição no dicionário e armazená-la em uma variável do edifício
                 # com o seu buffer em raio.
                 featEdiBuf = dictEdiBuffer[idEdificio]
-
+                
                 # Encontrando a geometria dessa feição
                 geomEdiBuf = featEdiBuf.geometry()
 
@@ -313,24 +314,21 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
 
                 # Analisando o predicado espacial e armazenando os edifícios que estão dentro das rodovias buffadas na direita, temos:
                 if geomEdiBuf.within(geomRodBufDir):
-
+                    
                     # Adicionando no dicionário do edifício dentro do buffer da direita, pelos índices:
                     dictEdiDentroBufDir[idEdificio] = featureRod.id()
 
                     # Analisando a distância entre a rodovia e o edifício, sem o buffer, temos:
-                    dist = dictEdificios[idEdificio].geometry().distance(
-                        featureRod.geometry())
+                    dist = dictEdificios[idEdificio].geometry().distance(featureRod.geometry())
 
                     # Verificando se o edificio já foi cadastrado no dicionário das distâncias:
                     # Onde será adicionado como chave a id do edifício e como valor um dicionário que irá conter
                     # o id da rodovia e a distância correspondente.
                     if idEdificio not in dictDistEdiRodoDir:
-                        dictDistEdiRodoDir[idEdificio] = {
-                            featureRod.id(): dist}
+                        dictDistEdiRodoDir[idEdificio] = {featureRod.id(): dist}
                     # Caso o edifício já esteja cadastrado, podemos fazer:
                     else:
-                        # Onde será acrescido a "id" da rodovia e a distância
-                        dictDistEdiRodoDir[idEdificio][featureRod.id()] = dist
+                        dictDistEdiRodoDir[idEdificio][featureRod.id()] = dist # Onde será acrescido a "id" da rodovia e a distância
 
                 # Analisando o caso do edifício não estar dentro da geometria, mas estar intersectando:
                 else:
@@ -341,58 +339,50 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
 
                     # Analisando agora o fato da distância do edifício para a rodovia for menor que a permitida
                     # A distância permitida seria 12.5 (metade da rodovia) + 12.5 * (2) ** (1/2) (metade da diagonal do quadrado)
-                    dist = dictEdificios[idEdificio].geometry().distance(
-                        featureRod.geometry())
+                    dist = dictEdificios[idEdificio].geometry().distance(featureRod.geometry())
 
                     # Analisando exatamente esse condição, temos:
                     if dist < (12.5 + 12.5 * (2) ** (1/2)):
                         # Podemos armazenar esse edifício no dicionário que está dentro do buffer da rodovia:
                         dictEdiDentroBufDir[idEdificio] = featureRod.id()
-
+                        
                         # Se o id do edifício não foi ainda armazenado no dicionário, será adicionado
                         if idEdificio not in dictDistEdiRodoDir:
-                            dictDistEdiRodoDir[idEdificio] = {
-                                featureRod.id(): dist}
+                            dictDistEdiRodoDir[idEdificio] = {featureRod.id(): dist}
                         # Caso o edifício já esteja cadastrado, podemos fazer:
                         else:
-                            # Onde será acrescido a "id" da rodovia e a distância
-                            dictDistEdiRodoDir[idEdificio][featureRod.id(
-                            )] = dist
-
+                            dictDistEdiRodoDir[idEdificio][featureRod.id()] = dist # Onde será acrescido a "id" da rodovia e a distância
+            
             # Realizando a segunda etapa, analisar os edifícios e o buffer da esquerda:
             for idEdificioEsq in edifIndiceEspacial.intersects(bboxRodBufEsq):
-                # Temos os índices dos edifícios que intersectam com o buffer da rodovia da esquerda com essa iteração,
+                # Temos os índices dos edifícios que intersectam com o buffer da rodovia da esquerda com essa iteração, 
                 # vamos criar uma variável para puxar do dicionário das feições pelo índice do buffer de raio no edifício
                 # e colocar em uma variável.
                 featEdiBufEsq = dictEdiBuffer[idEdificioEsq]
-
+                
                 # Encontrando a geometria dessa feição:
                 geomEdiBufEsq = featEdiBufEsq.geometry()
 
                 # Adicionando na lista o índice do edifício:
                 edificiosInt.append(idEdificio)
 
-                # Analisando o predicado espacial e armazenando os edifícios que estão dentro das rodovias buffadas na esquerda,
+                # Analisando o predicado espacial e armazenando os edifícios que estão dentro das rodovias buffadas na esquerda, 
                 # temos:
                 if geomEdiBufEsq.within(geomRodBufEsq):
                     # Adicionando no dicionário do edíficio dentro do buffer da esquerda, pelos índices:
                     dictEdiDentroBufEsq[idEdificioEsq] = featureRod.id()
 
                     # Analisando a distância entre o edíficio e a rodovia, ambos sem o buffer, temos:
-                    distEsq = dictEdificios[idEdificioEsq].geometry().distance(
-                        featureRod.geometry())
+                    distEsq = dictEdificios[idEdificioEsq].geometry().distance(featureRod.geometry())
 
                     # Verificando se o edifício já foi cadastrado no dicionário das distâncias:
                     # Onde será adicionado como chave a id do edifício e como valor um dicionário que
                     # irá o id da rodovia e a distância obtida.
                     if idEdificioEsq not in dictDistEdiRodoEsq:
-                        dictDistEdiRodoEsq[idEdificioEsq] = {
-                            featureRod.id(): distEsq}
+                        dictDistEdiRodoEsq[idEdificioEsq] = {featureRod.id(): distEsq}
                     # Caso o edifício já esteja cadastrado, podemos fazer:
                     else:
-                        # Onde será acrescido a "id" da rodovia e a distância
-                        dictDistEdiRodoEsq[idEdificioEsq][featureRod.id(
-                        )] = distEsq
+                        dictDistEdiRodoEsq[idEdificioEsq][featureRod.id()] = distEsq # Onde será acrescido a "id" da rodovia e a distância
 
                 # Analisando o caso do edifício não estar dentro da geometria, mas estar intersectando:
                 else:
@@ -402,10 +392,9 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
                     # tanto do buffer da esquerda quanto da direita
 
                     # Analisando agora o caso da distância do edifício para a rodovia ser menor que a permitida
-                    # A distância mínima permitida seria igual a 12.5 (metade do tamanho da rodovia) somado com
+                    # A distância mínima permitida seria igual a 12.5 (metade do tamanho da rodovia) somado com 
                     # 12.5 * (2) ** (1/2) (metade da diagonal do quadrado)
-                    distEsq = dictEdificios[idEdificioEsq].geometry().distance(
-                        featureRod.geometry())
+                    distEsq = dictEdificios[idEdificioEsq].geometry().distance(featureRod.geometry())
 
                     # Analisando exatamente essa condição, temos
                     if distEsq < (12.5 + 12.5 * (2) ** (1/2)):
@@ -413,27 +402,24 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
                         dictEdiDentroBufEsq[idEdificioEsq] = featureRod.id()
 
                         # Verificando se o edifício já foi cadastrado no dicionário das distâncias:
-                        # Onde será adicionado como chave a id do edifício e como valor um dicionário que
+                        # Onde será adicionado como chave a id do edifício e como valor um dicionário que 
                         # irá o id da rodovia e a distância obtida.
                         if idEdificioEsq not in dictDistEdiRodoEsq:
-                            dictDistEdiRodoEsq[idEdificioEsq] = {
-                                featureRod.id(): distEsq}
+                            dictDistEdiRodoEsq[idEdificioEsq] = {featureRod.id(): distEsq}
                         # Caso o edifício já esteja cadastrado, podemos fazer:
                         else:
-                            # Onde será acrescido a "id" da rodovia e a distância
-                            dictDistEdiRodoEsq[idEdificioEsq][featureRod.id(
-                            )] = distEsq
+                            dictDistEdiRodoEsq[idEdificioEsq][featureRod.id()] = distEsq # Onde será acrescido a "id" da rodovia e a distância
 
         # Multistepfeedback
         multiStepFeedback.setCurrentStep(4)
-
+        
         # Armazenando em variáveis as listas das chaves presentes nos dicionário de interseção e de contido:
         listaIdEdiInBufDir = list(dictEdiDentroBufDir.keys())
         listaIdEdiIntBufDir = list(dictEdiIntBufDir.keys())
         listaIdEdiInBufEsq = list(dictEdiDentroBufEsq.keys())
         listaIdEdiIntBufEsq = list(dictEdiIntBufEsq.keys())
 
-        # Criando uma lista para armazenar os valores de id que estão presentes em direções diferentes, por exemplo,
+        # Criando uma lista para armazenar os valores de id que estão presentes em direções diferentes, por exemplo, 
         # um id está na listaIdEdiInBufDir e também está dentro de listaIdEdiInBufEsq ou listaIdEdiIntBufEsq, ou o caso
         # em que temos o índice em listaIdEdiIntBufDir e também está dentro de listaIdEdiInBufEsq ou listaIdEdiIntBufEsq.
         listaDuasDirecoes = []
@@ -453,7 +439,7 @@ class Projeto3Solucao(QgsProcessingAlgorithm):
                 listaDuasDirecoes.append(idIn)
             elif idIn in listaIdEdiIntBufEsq:
                 listaDuasDirecoes.append(idIn)
-
+            
         # Criando o dicionário para as feições que substituirão:
         dictEdificiosOri = {}
 
